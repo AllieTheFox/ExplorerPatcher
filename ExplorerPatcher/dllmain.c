@@ -12134,6 +12134,58 @@ static void StartMenu_FixUserTileMenu(PBYTE pSearchBegin, size_t cbSearch)
     }
 }
 
+static void StartMenu_DisableDataCorruptionRecovery(PBYTE pSearchBegin, size_t cbSearch)
+{
+    if (!pSearchBegin || !cbSearch)
+        return;
+
+#if defined(_M_X64)
+    // StartUI::DataCorruptionRecovery::PreStartInitialize
+    // 48 83 65 F0 00 48 8B CE E8 ?? ?? ?? ?? 48 8B D8 48 89 45 E8
+    //                         xxxxxxxxxxxxxx
+    // Ref: StartUI::App::InitializeStartModelForStartMenu
+    PBYTE match = FindPattern(
+        pSearchBegin,
+        cbSearch,
+        "\x48\x83\x65\xF0\x00\x48\x8B\xCE\xE8\x00\x00\x00\x00\x48\x8B\xD8\x48\x89\x45\xE8",
+        "xxxxxxxxx????xxxxxxx"
+    );
+    if (match)
+    {
+        match += 8;
+
+        DWORD dwOldProtect;
+        if (VirtualProtect(match, 5, PAGE_EXECUTE_READWRITE, &dwOldProtect))
+        {
+            memset(match, 5, 0x90);
+            VirtualProtect(match, 5, dwOldProtect, &dwOldProtect);
+        }
+    }
+
+    // StartUI::DataCorruptionRecovery::PostStartInitialize
+    // 80 BF ?? ?? 00 00 00 75 2A C6 87 ?? ?? 00 00 01 E8 ?? ?? ?? ??
+    //                                                 xxxxxxxxxxxxxx
+    // Ref: StartUI::StartViewModel::CreateAndPopulateGroupsLayoutResolver
+    PBYTE match2 = FindPattern(
+        pSearchBegin,
+        cbSearch,
+        "\x80\xBF\x00\x00\x00\x00\x00\x75\x2A\xC6\x87\x00\x00\x00\x00\x01\xE8",
+        "xx??xxxxxxx??xxxx"
+    );
+    if (match2)
+    {
+        match2 += 16;
+
+        DWORD dwOldProtect;
+        if (VirtualProtect(match2, 5, PAGE_EXECUTE_READWRITE, &dwOldProtect))
+        {
+            memset(match2, 5, 0x90);
+            VirtualProtect(match2, 5, dwOldProtect, &dwOldProtect);
+        }
+    }
+#endif
+}
+
 LSTATUS StartUI_RegOpenKeyExW(HKEY hKey, LPCWSTR lpSubKey, DWORD ulOptions, REGSAM samDesired, PHKEY phkResult)
 {
     if (wcsstr(lpSubKey, L"$start.tilegrid$windows.data.curatedtilecollection.tilecollection\\Current"))
@@ -12853,12 +12905,13 @@ DWORD InjectStartMenu()
             // Fixes context menu crashes
             StartMenu_FixContextMenuXbfHijackMethod();
 
-            // Fixes user tile menu
+            // Fixes user tile menu & disables data corruption recovery
             PBYTE pStartUIText;
             DWORD cbStartUIText;
             if (TextSectionBeginAndSize(hStartUI, &pStartUIText, &cbStartUIText))
             {
                 StartMenu_FixUserTileMenu(pStartUIText, cbStartUIText);
+                StartMenu_DisableDataCorruptionRecovery(pStartUIText, cbStartUIText);
             }
 
             // Enables "Show more tiles" setting
