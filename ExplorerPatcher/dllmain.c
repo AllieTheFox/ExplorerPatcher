@@ -12139,51 +12139,95 @@ static void StartMenu_DisableDataCorruptionRecovery(PBYTE pSearchBegin, size_t c
     if (!pSearchBegin || !cbSearch)
         return;
 
-#if defined(_M_X64)
     // StartUI::DataCorruptionRecovery::PreStartInitialize
-    // 48 83 65 F0 00 48 8B CE E8 ?? ?? ?? ?? 48 8B D8 48 89 45 E8
-    //                         xxxxxxxxxxxxxx
+#if defined(_M_X64)
+    // E8 ?? ?? ?? ?? 48 83 65 F0 00 48 8B CE E8 ?? ?? ?? ?? 48 8B D8 48 89 45 E8
+    // xxxxxxxxxxxxxx NOP this call
     // Ref: StartUI::App::InitializeStartModelForStartMenu
-    PBYTE match = FindPattern(
+    PBYTE matchPre = FindPattern(
         pSearchBegin,
         cbSearch,
         "\x48\x83\x65\xF0\x00\x48\x8B\xCE\xE8\x00\x00\x00\x00\x48\x8B\xD8\x48\x89\x45\xE8",
         "xxxxxxxxx????xxxxxxx"
     );
-    if (match)
+    if (matchPre)
     {
-        match += 8;
-
-        DWORD dwOldProtect;
-        if (VirtualProtect(match, 5, PAGE_EXECUTE_READWRITE, &dwOldProtect))
-        {
-            memset(match, 5, 0x90);
-            VirtualProtect(match, 5, dwOldProtect, &dwOldProtect);
-        }
+        matchPre = matchPre - 5 >= pSearchBegin ? matchPre - 5 : NULL;
     }
+#elif defined (_M_ARM64)
+    // ?? ?? ?? ?? FF 26 00 F9 E0 03 16 AA ?? ?? ?? ?? F4 03 00 AA F4 22 00 F9
+    // xxxxxxxxxxx NOP this BL
+    // Ref: StartUI::App::InitializeStartModelForStartMenu
+    PBYTE matchPre = FindPattern_4_(
+        pSearchBegin,
+        cbSearch,
+        "\xFF\x26\x00\xF9\xE0\x03\x16\xAA\x00\x00\x00\x00\xF4\x03\x00\xAA\xF4\x22\x00\xF9",
+        "xxxxxxxx????xxxxxxxx"
+    );
+    if (matchPre)
+    {
+        matchPre = matchPre - 4 >= pSearchBegin ? matchPre - 4 : NULL;
+    }
+#endif
 
     // StartUI::DataCorruptionRecovery::PostStartInitialize
+#if defined(_M_X64)
     // 80 BF ?? ?? 00 00 00 75 2A C6 87 ?? ?? 00 00 01 E8 ?? ?? ?? ??
-    //                                                 xxxxxxxxxxxxxx
+    //                                   NOP this call xxxxxxxxxxxxxx
     // Ref: StartUI::StartViewModel::CreateAndPopulateGroupsLayoutResolver
-    PBYTE match2 = FindPattern(
+    PBYTE matchPost = FindPattern(
         pSearchBegin,
         cbSearch,
         "\x80\xBF\x00\x00\x00\x00\x00\x75\x2A\xC6\x87\x00\x00\x00\x00\x01\xE8",
         "xx??xxxxxxx??xxxx"
     );
-    if (match2)
+    if (matchPost)
     {
-        match2 += 16;
-
-        DWORD dwOldProtect;
-        if (VirtualProtect(match2, 5, PAGE_EXECUTE_READWRITE, &dwOldProtect))
-        {
-            memset(match2, 5, 0x90);
-            VirtualProtect(match2, 5, dwOldProtect, &dwOldProtect);
-        }
+        matchPost += 16;
+    }
+#elif defined (_M_ARM64)
+    // FD 7B BE A9 FD 03 00 91 30 00 80 92 B0 0B 00 F9 20 00 80 52 ?? ?? ?? ?? 1F 20 03 D5
+    //                                                 NOP this BL xxxxxxxxxxx
+    // Ref: StartUI::DataCorruptionRecovery::PostStartInitialize
+    PBYTE matchPost = FindPattern_4_(
+        pSearchBegin,
+        cbSearch,
+        "\xFD\x7B\xBE\xA9\xFD\x03\x00\x91\x30\x00\x80\x92\xB0\x0B\x00\xF9\x20\x00\x80\x52\x00\x00\x00\x00\x1F\x20\x03\xD5",
+        "xxxxxxxxxxxxxxxxxxxx????xxxx"
+    );
+    if (matchPost)
+    {
+        matchPost += 20;
     }
 #endif
+
+    if (matchPre && matchPost)
+    {
+        DWORD dwOldProtect;
+#if defined (_M_X64)
+        if (VirtualProtect(matchPre, 5, PAGE_EXECUTE_READWRITE, &dwOldProtect))
+        {
+            memset(matchPre, 0x90, 5);
+            VirtualProtect(matchPre, 5, dwOldProtect, &dwOldProtect);
+        }
+        if (VirtualProtect(matchPost, 5, PAGE_EXECUTE_READWRITE, &dwOldProtect))
+        {
+            memset(matchPost, 0x90, 5);
+            VirtualProtect(matchPost, 5, dwOldProtect, &dwOldProtect);
+        }
+#elif defined (_M_ARM64)
+        if (VirtualProtect(matchPre, 4, PAGE_EXECUTE_READWRITE, &dwOldProtect))
+        {
+            *(DWORD*)matchPre = 0xD503201F;
+            VirtualProtect(matchPre, 4, dwOldProtect, &dwOldProtect);
+        }
+        if (VirtualProtect(matchPost, 4, PAGE_EXECUTE_READWRITE, &dwOldProtect))
+        {
+            *(DWORD*)matchPost = 0xD503201F;
+            VirtualProtect(matchPost, 4, dwOldProtect, &dwOldProtect);
+        }
+#endif
+    }
 }
 
 LSTATUS StartUI_RegOpenKeyExW(HKEY hKey, LPCWSTR lpSubKey, DWORD ulOptions, REGSAM samDesired, PHKEY phkResult)
