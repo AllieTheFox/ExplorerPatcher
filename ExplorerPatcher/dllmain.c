@@ -12171,6 +12171,10 @@ static void StartMenu_DisableDataCorruptionRecovery(PBYTE pSearchBegin, size_t c
     if (matchPre)
     {
         matchPre = matchPre - 4 >= pSearchBegin ? matchPre - 4 : NULL;
+        if (matchPre && !ARM64_IsBL(*(DWORD*)matchPre))
+        {
+            matchPre = NULL;
+        }
     }
 #endif
 
