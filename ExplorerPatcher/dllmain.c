@@ -12153,6 +12153,10 @@ static void StartMenu_DisableDataCorruptionRecovery(PBYTE pSearchBegin, size_t c
     if (matchPre)
     {
         matchPre = matchPre - 5 >= pSearchBegin ? matchPre - 5 : NULL;
+        if (matchPre && *matchPre != 0xE8)
+        {
+            matchPre = NULL;
+        }
     }
 #elif defined (_M_ARM64)
     // ?? ?? ?? ?? FF 26 00 F9 E0 03 16 AA ?? ?? ?? ?? F4 03 00 AA F4 22 00 F9
